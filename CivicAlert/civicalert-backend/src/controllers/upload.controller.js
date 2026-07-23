@@ -7,6 +7,16 @@ const streamifier = require("streamifier");
 // @access  Private – authenticated users
 // ─────────────────────────────────────────────
 const uploadImage = (req, res) => {
+  // Check Cloudinary is configured
+  if (
+    !process.env.CLOUDINARY_CLOUD_NAME ||
+    process.env.CLOUDINARY_CLOUD_NAME === "your_cloud_name"
+  ) {
+    return res.status(503).json({
+      message: "Image upload is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in your .env file.",
+    });
+  }
+
   // Multer already ran — check that a file was provided
   if (!req.file) {
     return res.status(400).json({ message: "No image file provided" });
@@ -18,9 +28,9 @@ const uploadImage = (req, res) => {
       folder: "civicalert/issues",
       resource_type: "image",
       transformation: [
-        { width: 1200, crop: "limit" },   // cap width at 1200px
-        { quality: "auto:good" },          // smart compression
-        { fetch_format: "auto" },          // serve WebP where supported
+        { width: 1200, crop: "limit" },
+        { quality: "auto:good" },
+        { fetch_format: "auto" },
       ],
     },
     (error, result) => {
