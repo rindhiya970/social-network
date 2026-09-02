@@ -32,11 +32,12 @@ const register = async (req, res) => {
     }
 
     // Create new user with role automatically set to "citizen"
+    // Ignore any role field in the request body — citizens only
     const user = new User({
       name,
       email,
-      passwordHash: password, // Will be hashed by pre-save hook
-      role: "citizen", // Enforced - users cannot choose their role during registration
+      passwordHash: password,
+      role: "citizen", // always forced — cannot be overridden via API
     });
 
     await user.save();
