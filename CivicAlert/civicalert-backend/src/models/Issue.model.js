@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { calculateSLADeadline } = require("../utils/sla.utils");
 
 const issueSchema = new mongoose.Schema(
   {
@@ -22,24 +23,12 @@ const issueSchema = new mongoose.Schema(
       type: String,
       required: [true, "Category is required"],
       enum: {
-        values: [
-          "pothole",
-          "garbage",
-          "water",
-          "power",
-          "drainage",
-          "streetlight",
-          "road",
-          "other",
-        ],
-        message: "Invalid category. Must be one of: pothole, garbage, water, power, drainage, streetlight, road, other",
+        values: ["pothole", "garbage", "water", "power", "drainage", "streetlight", "road", "other"],
+        message: "Invalid category",
       },
     },
 
-    photoUrl: {
-      type: String,
-      default: null,
-    },
+    photoUrl: { type: String, default: null },
 
     location: {
       type: {
@@ -48,19 +37,14 @@ const issueSchema = new mongoose.Schema(
         required: [true, "Location type is required"],
       },
       coordinates: {
-        type: [Number], // [longitude, latitude]
+        type: [Number],
         required: [true, "Coordinates are required"],
         validate: {
-          validator: function (coords) {
-            return (
-              Array.isArray(coords) &&
-              coords.length === 2 &&
-              coords[0] >= -180 &&
-              coords[0] <= 180 && // longitude
-              coords[1] >= -90 &&
-              coords[1] <= 90   // latitude
-            );
-          },
+          validator: (coords) =>
+            Array.isArray(coords) &&
+            coords.length === 2 &&
+            coords[0] >= -180 && coords[0] <= 180 &&
+            coords[1] >= -90  && coords[1] <= 90,
           message: "Coordinates must be [longitude, latitude] with valid ranges",
         },
       },
@@ -68,10 +52,7 @@ const issueSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: {
-        values: ["pending", "acknowledged", "in_progress", "resolved", "overdue"],
-        message: "Invalid status",
-      },
+      enum: { values: ["pending", "acknowledged", "in_progress", "resolved", "overdue"], message: "Invalid status" },
       default: "pending",
     },
 
@@ -81,56 +62,57 @@ const issueSchema = new mongoose.Schema(
       required: [true, "reportedBy is required"],
     },
 
-    wardId: {
-      type: String,
-      trim: true,
-      default: null,
-    },
+    wardId:     { type: String, trim: true, default: null },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 
-    assignedTo: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
+    upvotes:     [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    upvoteCount: { type: Number, default: 0 },
 
-    upvotes: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-    ],
+    escalated:   { type: Boolean, default: false },
 
-    upvoteCount: {
-      type: Number,
-      default: 0,
-    },
-
-    escalated: {
-      type: Boolean,
-      default: false,
-    },
-
+    // ── Phase 7 SLA & Priority fields ─────────────────
     slaDeadline: {
       type: Date,
-      default: () => new Date(Date.now() + 72 * 60 * 60 * 1000), // 72 hours from now
+      default: null,
     },
+
+    overdue:      { type: Boolean, default: false },
+    overdueHours: { type: Number,  default: 0 },
+
+    priority: {
+      type: String,
+      enum: ["low", "medium", "high", "critical"],
+      default: "low",
+    },
+
+    lastPriorityUpdate: { type: Date, default: null },
+
+    // AI confidence score (0-100) stored for priority weighting
+    aiConfidence: { type: Number, default: 0, min: 0, max: 100 },
+
+    // Admin-scheduled date for when the official should address the issue
+    scheduledAt: { type: Date, default: null },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Geospatial index for location-based queries
-issueSchema.index({ location: "2dsphere" });
+// ── Pre-save hook: set category-specific SLA on new documents ─────────────
+issueSchema.pre("save", function () {
+  if (this.isNew && !this.slaDeadline) {
+    this.slaDeadline = calculateSLADeadline(this.category, new Date(this.createdAt ?? Date.now()));
+  }
+});
 
-// Additional indexes for common query patterns
-issueSchema.index({ status: 1 });
-issueSchema.index({ category: 1 });
-issueSchema.index({ wardId: 1 });
-issueSchema.index({ reportedBy: 1 });
-issueSchema.index({ createdAt: -1 });
+// ── Indexes ──────────────────────────────────────────────────────────────
+issueSchema.index({ location:    "2dsphere" });
+issueSchema.index({ status:      1 });
+issueSchema.index({ category:    1 });
+issueSchema.index({ wardId:      1 });
+issueSchema.index({ reportedBy:  1 });
+issueSchema.index({ createdAt:  -1 });
 issueSchema.index({ slaDeadline: 1 });
+issueSchema.index({ overdue:     1 });
+issueSchema.index({ priority:    1 });
 
 const Issue = mongoose.model("Issue", issueSchema);
-
 module.exports = Issue;
