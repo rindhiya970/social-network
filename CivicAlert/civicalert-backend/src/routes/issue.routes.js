@@ -6,6 +6,7 @@ const {
   getAllIssues,
   getMyIssues,
   getIssueById,
+  toggleUpvote,
 } = require("../controllers/issue.controller");
 
 const router = express.Router();
@@ -16,23 +17,19 @@ const router = express.Router();
 // ─────────────────────────────────────────────
 
 // @route   GET /api/issues/my
-// @desc    Get current user's issues
-// @access  Private
 router.get("/my", authenticateJWT, getMyIssues);
 
 // @route   GET /api/issues
-// @desc    Get all issues (with optional filters)
-// @access  Public
 router.get("/", getAllIssues);
 
 // @route   POST /api/issues
-// @desc    Create a new issue
-// @access  Private – citizen only
 router.post("/", authenticateJWT, allowRoles("citizen"), createIssue);
 
+// @route   POST /api/issues/:id/upvote
+// @desc    Toggle upvote (citizen only, cannot upvote own issue)
+router.post("/:id/upvote", authenticateJWT, allowRoles("citizen"), toggleUpvote);
+
 // @route   GET /api/issues/:id
-// @desc    Get single issue by ID
-// @access  Public
 router.get("/:id", getIssueById);
 
 module.exports = router;
