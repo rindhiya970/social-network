@@ -1,4 +1,70 @@
 const Issue = require("../models/Issue.model");
+const { getIO } = require("../config/socket");
+const { calculateSLADeadline, calculatePriority } = require("../utils/sla.utils");
+
+// ─────────────────────────────────────────────
+// @route   POST /api/issues/:id/upvote
+// @desc    Toggle upvote on an issue
+// @access  Private – authenticated citizens
+// ─────────────────────────────────────────────
+const toggleUpvote = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user._id;
+
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid issue ID format" });
+    }
+
+    const issue = await Issue.findById(id);
+    if (!issue) {
+      return res.status(404).json({ message: "Issue not found" });
+    }
+
+    // Cannot upvote own issue
+    if (issue.reportedBy.toString() === userId.toString()) {
+      return res.status(409).json({ message: "You cannot upvote your own issue" });
+    }
+
+    const alreadyUpvoted = issue.upvotes.some(
+      (uid) => uid.toString() === userId.toString()
+    );
+
+    if (alreadyUpvoted) {
+      // Remove upvote
+      issue.upvotes.pull(userId);
+      issue.upvoteCount = Math.max(0, issue.upvotes.length);
+    } else {
+      // Add upvote
+      issue.upvotes.push(userId);
+      issue.upvoteCount = issue.upvotes.length;
+    }
+
+    await issue.save();
+
+    // Recalculate priority after upvote change
+    issue.priority = calculatePriority(issue);
+    issue.lastPriorityUpdate = new Date();
+    await issue.save();
+
+    // ── Real-time: broadcast updated upvote count ──
+    try {
+      const populated = await Issue.findById(issue._id)
+        .populate("reportedBy", "name email wardId")
+        .populate("assignedTo", "name email");
+      getIO().to("citizens").emit("issueUpdated", populated.toObject());
+    } catch { /* silently skip */ }
+
+    return res.status(200).json({
+      success: true,
+      upvoted: !alreadyUpvoted,
+      upvoteCount: issue.upvoteCount,
+    });
+  } catch (error) {
+    console.error("toggleUpvote error:", error);
+    res.status(500).json({ message: "Server error while processing upvote", error: error.message });
+  }
+};
 
 // ─────────────────────────────────────────────
 // @route   POST /api/issues
@@ -46,21 +112,30 @@ const createIssue = async (req, res) => {
       description,
       category,
       photoUrl: photoUrl || null,
-      location: {
-        type: "Point",
-        coordinates,
-      },
+      location: { type: "Point", coordinates },
       wardId: wardId || req.user.wardId || null,
-      // Fields automatically set — not from request body
       reportedBy: req.user._id,
       status: "pending",
-      slaDeadline: new Date(Date.now() + 72 * 60 * 60 * 1000),
+      overdue: false,
+      overdueHours: 0,
+      slaDeadline: calculateSLADeadline(category),
+      // aiConfidence from body (set when Gemini analyzed the photo)
+      aiConfidence: Number(req.body.aiConfidence) || 0,
+      lastPriorityUpdate: new Date(),
     });
+
+    // Calculate initial priority with all available data
+    issue.priority = calculatePriority(issue);
 
     await issue.save();
 
     // Populate reporter info before responding
     await issue.populate("reportedBy", "name email role wardId");
+
+    // ── Real-time: notify all connected clients ──
+    try {
+      getIO().to("citizens").emit("issueCreated", issue.toObject());
+    } catch { /* socket not yet ready — silently skip */ }
 
     res.status(201).json({
       message: "Issue reported successfully",
@@ -211,4 +286,5 @@ module.exports = {
   getAllIssues,
   getMyIssues,
   getIssueById,
+  toggleUpvote,
 };
