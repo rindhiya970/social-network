@@ -301,6 +301,9 @@ const deleteOfficial = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
+module.exports = {
+  getDashboard,
   getOfficials,
   createOfficial,
   updateOfficial,
