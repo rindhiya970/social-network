@@ -266,11 +266,45 @@ const assignIssue = async (req, res) => {
   }
 };
 
-module.exports = {
-  getDashboard,
+// ─────────────────────────────────────────────────────────────
+// DELETE /api/admin/officials/:id
+// Permanently delete an official account (admin only)
+// Will not delete if official has unresolved assigned issues
+// ─────────────────────────────────────────────────────────────
+const deleteOfficial = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid official ID" });
+    }
+
+    const official = await User.findOne({ _id: id, role: "official" });
+    if (!official) return res.status(404).json({ message: "Official not found" });
+
+    // Check for unresolved assigned issues
+    const activeIssues = await Issue.countDocuments({
+      assignedTo: id,
+      status: { $nin: ["resolved"] },
+    });
+
+    if (activeIssues > 0) {
+      return res.status(409).json({
+        message: `Cannot delete: ${activeIssues} unresolved issue(s) are assigned to this official. Reassign or resolve them first.`,
+      });
+    }
+
+    await User.findByIdAndDelete(id);
+
+    res.status(200).json({ message: `Official "${official.name}" deleted successfully` });
+  } catch (error) {
+    console.error("deleteOfficial error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
   getOfficials,
   createOfficial,
   updateOfficial,
+  deleteOfficial,
   getAdminIssues,
   assignIssue,
 };
