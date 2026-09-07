@@ -6,6 +6,7 @@ const {
   getOfficials,
   createOfficial,
   updateOfficial,
+  deleteOfficial,
   getAdminIssues,
   assignIssue,
 } = require("../controllers/admin.controller");
@@ -19,9 +20,10 @@ router.use(authenticateJWT, allowRoles("admin"));
 router.get("/dashboard", getDashboard);
 
 // Officials management
-router.get("/officials",      getOfficials);
-router.post("/officials",     createOfficial);
+router.get("/officials",       getOfficials);
+router.post("/officials",      createOfficial);
 router.patch("/officials/:id", updateOfficial);
+router.delete("/officials/:id", deleteOfficial);
 
 // Issues + workload
 router.get("/issues",          getAdminIssues);
